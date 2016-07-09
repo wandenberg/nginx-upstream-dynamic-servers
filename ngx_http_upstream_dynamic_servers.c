@@ -15,6 +15,7 @@ typedef struct {
     ngx_str_t                     host;
     in_port_t                     port;
     ngx_event_t                   timer;
+    time_t                        valid;
 } ngx_http_upstream_dynamic_server_conf_t;
 
 typedef struct {
@@ -370,6 +371,13 @@ static void ngx_http_upstream_dynamic_server_resolve(ngx_event_t *ev) {
 
     dynamic_server = ev->data;
 
+    /* while last resolution is valid do not try to renew the DNS */
+    if (dynamic_server->valid >= ngx_time()) {
+        ngx_log_debug2(NGX_LOG_DEBUG_CORE, ev->log, 0, "upstream-dynamic-servers: '%V' is valid for more %d seconds", &dynamic_server->host, dynamic_server->valid - ngx_time());
+        ngx_add_timer(&dynamic_server->timer, 1000);
+        return;
+    }
+
     ctx = ngx_resolve_start(udsmcf->resolver, NULL);
     if (ctx == NULL) {
         ngx_log_error(NGX_LOG_ALERT, ev->log, 0, "upstream-dynamic-servers: resolver start error for '%V'", &dynamic_server->host);
@@ -539,9 +547,14 @@ reinit_upstream:
 
 end:
 
+    hash = ngx_crc32_short(ctx->name.data, ctx->name.len);
+    rn = ngx_resolver_lookup_name(ctx->resolver, &ctx->name, hash);
+
+    if (rn && rn->valid > 0) {
+        dynamic_server->valid = rn->valid;
+    }
+
     if (ctx->resolver->log->log_level & NGX_LOG_DEBUG_CORE) {
-        hash = ngx_crc32_short(ctx->name.data, ctx->name.len);
-        rn = ngx_resolver_lookup_name(ctx->resolver, &ctx->name, hash);
         uint32_t refresh_in;
         if (rn != NULL && rn->ttl) {
             refresh_in = (rn->valid - ngx_time()) * 1000;
