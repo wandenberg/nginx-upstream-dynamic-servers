@@ -363,6 +363,11 @@ static void ngx_http_upstream_dynamic_server_resolve(ngx_event_t *ev) {
     ngx_http_upstream_dynamic_server_conf_t *dynamic_server;
     ngx_resolver_ctx_t *ctx;
 
+    if (ngx_exiting) {
+        ngx_log_debug(NGX_LOG_DEBUG_CORE, ngx_cycle->log, 0, "upstream-dynamic-servers: worker is about to exit, do not execute any task");
+        return;
+    }
+
     dynamic_server = ev->data;
 
     ctx = ngx_resolve_start(udsmcf->resolver, NULL);
@@ -552,11 +557,6 @@ end:
     }
 
     ngx_resolve_name_done(ctx);
-
-    if (ngx_exiting) {
-        ngx_log_debug(NGX_LOG_DEBUG_CORE, ngx_cycle->log, 0, "upstream-dynamic-servers: worker is about to exit, do not set the timer again");
-        return;
-    }
 
     ngx_add_timer(&dynamic_server->timer, 1000);
 }
